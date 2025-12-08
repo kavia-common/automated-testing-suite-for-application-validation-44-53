@@ -1,0 +1,4 @@
+{
+    "command": "PORT=<port> HOST=<host> BROWSER=none npm start",
+    "working_directory": "/home/kavia/workspace/code-generation/automated-testing-suite-for-application-validation-44-53/playwright_test_suite_frontend"
+}
