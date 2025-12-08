@@ -1,0 +1,12 @@
+{
+  "name": "playwright-test-suite-root",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test:e2e": "node -e \"process.exitCode=0\" && playwright test --config=e2e/playwright.config.ts",
+    "test:e2e:ci": "playwright install --with-deps && playwright test --config=e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  }
+}
