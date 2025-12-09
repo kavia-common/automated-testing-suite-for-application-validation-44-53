@@ -1,5 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// baseURL resolution notes:
+// - Prefer TEST_BASE_URL (explicit for tests).
+// - Fallback to REACT_APP_FRONTEND_URL, then REACT_APP_BACKEND_URL, then REACT_APP_API_BASE.
+// - If none set, baseURL will be undefined and tests should navigate with absolute URLs.
+const envBaseUrl =
+  (process.env.TEST_BASE_URL?.trim() ||
+    process.env.REACT_APP_FRONTEND_URL?.trim() ||
+    process.env.REACT_APP_BACKEND_URL?.trim() ||
+    process.env.REACT_APP_API_BASE?.trim() ||
+    '');
+
 export default defineConfig({
   testDir: './',
   timeout: 60_000,
@@ -16,6 +27,7 @@ export default defineConfig({
     screenshot: 'off',
     viewport: { width: 1280, height: 800 },
     ignoreHTTPSErrors: true,
+    baseURL: envBaseUrl || undefined,
   },
   projects: [
     {
