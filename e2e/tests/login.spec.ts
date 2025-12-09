@@ -29,10 +29,10 @@ test.describe('Authentication', () => {
     const password = process.env.TEST_PASSWORD || 'Qwerty1@';
 
     const envBase =
-      process.env.TEST_BASE_URL ||
-      process.env.REACT_APP_FRONTEND_URL ||
-      process.env.REACT_APP_BACKEND_URL ||
-      process.env.REACT_APP_API_BASE ||
+      process.env.TEST_BASE_URL ||'https://mail.google.com/chat/u/0/#chat/home'
+      // process.env.REACT_APP_FRONTEND_URL ||
+      // process.env.REACT_APP_BACKEND_URL ||
+      // process.env.REACT_APP_API_BASE ||
       '';
 
     // Prefer TEST_BASE_URL; fallback to Playwright baseURL; finally envBase if it looks like a URL
