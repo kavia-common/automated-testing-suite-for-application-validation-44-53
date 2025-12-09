@@ -11,6 +11,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "playwright test",
+    "test:e2e": "playwright test",
     "eject": "react-scripts eject",
     "pw:show-report": "npx playwright show-report"
   },

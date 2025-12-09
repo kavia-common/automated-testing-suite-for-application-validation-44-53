@@ -1,108 +1,88 @@
-import { test, expect } from '@playwright/test';
-import { getBaseURL, loadLoginTestCases, getSuccessAssertionHints } from './utils/testData';
+'use strict';
 
-/**
- * How to run:
- * - Ensure dependencies are installed (in the root of this container):
- *     npm ci
- * - Optional environment variables:
- *     REACT_APP_TEST_BASE_URL=http://localhost:3000
- *     REACT_APP_TEST_USERNAME=<valid username>
- *     REACT_APP_TEST_PASSWORD=<valid password>
- *     REACT_APP_TEST_DASHBOARD_SELECTOR=<CSS selector present on success>
- *     REACT_APP_TEST_DASHBOARD_URL_CONTAINS=/dashboard
- * - Place the Excel file (if not already) at: repo_root/attachments/20251209_103508_Login_Test_Cases.xlsx
- * - Run tests:
- *     npx playwright test
- *
- * These tests will:
- *  - Navigate to baseURL
- *  - Interact with login within an iframe using the provided locators sequence
- *  - Parameterize scenarios from the Excel sheet or fallback sample
- *  - Assert success (dashboard) or failure (error message) per test case
- */
+// Note: Although file extension is .ts, this is implemented in plain JavaScript as requested.
+const { test, expect } = require('@playwright/test');
+const { loadScenariosFromExcel } = require('./utils/excel');
 
-const BASE_URL = getBaseURL();
-const SUCCESS_HINTS = getSuccessAssertionHints();
+// Env-based defaults and optional success hints
+const DEFAULT_BASE_URL = process.env.REACT_APP_TEST_BASE_URL || 'http://localhost:3000';
+const EXPECT_SUCCESS_SELECTOR = process.env.EXPECT_SUCCESS_SELECTOR || process.env.REACT_APP_TEST_DASHBOARD_SELECTOR || '';
+const EXPECT_SUCCESS_URL_CONTAINS = process.env.REACT_APP_TEST_DASHBOARD_URL_CONTAINS || '/dashboard';
 
-const cases = loadLoginTestCases();
+// Load scenarios from Excel (attachments/20251209_105227_Login_Test_Cases.xlsx) with env fallbacks
+const scenarios = loadScenariosFromExcel();
 
 test.describe('Authentication - Login via iframe flow', () => {
-  for (const c of cases) {
-    test(c.title, async ({ page }) => {
+  for (const sc of scenarios) {
+    test(sc.title, async ({ page }) => {
+      const baseUrl = (sc.baseUrl && String(sc.baseUrl).trim()) || DEFAULT_BASE_URL;
+
       // Navigate to base URL
-      await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
 
-      // Wait for iframe present and get content frame
+      // Wait for iframe and obtain frame
       const iframeLocator = page.locator('[data-testid="iframe"]');
-      await expect(iframeLocator).toBeVisible({ timeout: 15000 });
-
+      await expect(iframeLocator).toBeVisible({ timeout: 30000 });
       const frame = await iframeLocator.contentFrame();
-      expect(frame, 'Login iframe contentFrame should be available').not.toBeNull();
+      expect(frame, 'Expected contentFrame from [data-testid="iframe"]').not.toBeNull();
 
-      // Provided locators sequence - USERNAME
-      await frame!.getByTestId('lsq-form-field-input-test').click();
-      await frame!.getByTestId('lsq-form-field-input-test').fill(c.username ?? '');
-      await frame!.getByRole('button', { name: 'Continue' }).click();
+      // Sequence: username
+      await frame.getByTestId('lsq-form-field-input-test').click();
+      await frame.getByTestId('lsq-form-field-input-test').fill(sc.username || '');
+      await frame.getByRole('button', { name: 'Continue' }).click();
 
-      // Provided locators sequence - PASSWORD
-      await frame!.getByTestId('lsq-form-field-input-test').click();
-      await frame!.getByTestId('lsq-form-field-input-test').fill(c.password ?? '');
-      await frame!.getByRole('button', { name: 'Continue' }).click();
+      // Sequence: password
+      await frame.getByTestId('lsq-form-field-input-test').click();
+      await frame.getByTestId('lsq-form-field-input-test').fill(sc.password || '');
+      await frame.getByRole('button', { name: 'Continue' }).click();
 
-      // Outcome assertions
-      if (c.outcome === 'success') {
-        // Prefer row-specific expected selector/url, else use env hints
-        const expectedSelector = c.expectedSelector || SUCCESS_HINTS.selector;
-        const expectedUrlContains = c.expectedUrlContains || SUCCESS_HINTS.urlContains;
+      if (sc.expectSuccess) {
+        // Prefer row hints, then env hints
+        const expectedSelector = sc.expectedSelector || EXPECT_SUCCESS_SELECTOR;
+        const expectedUrlContains = sc.expectedUrlContains || EXPECT_SUCCESS_URL_CONTAINS;
 
-        // If a selector is configured, wait for it to appear
+        // Wait for either selector visibility or URL change
         if (expectedSelector) {
-          await expect(page.locator(expectedSelector)).toBeVisible({ timeout: 20000 });
+          await expect(page.locator(expectedSelector)).toBeVisible({ timeout: 30000 });
+        } else if (expectedUrlContains && expectedUrlContains.trim().length) {
+          await expect(page).toHaveURL(new RegExp(`${escapeRegex(expectedUrlContains)}`), { timeout: 30000 });
         } else {
-          // Otherwise, assert for a common dashboard pattern if provided via URL contains
-          if (expectedUrlContains && expectedUrlContains.trim().length > 0) {
-            await expect(page).toHaveURL(new RegExp(`${escapeRegex(expectedUrlContains)}`), { timeout: 20000 });
-          } else {
-            // Fallback: check at least we are no longer on a login route if it's part of the app
-            await expect(page).not.toHaveURL(/login/i, { timeout: 20000 });
-          }
+          // Generic fallback: not on login URL
+          await expect(page).not.toHaveURL(/login/i, { timeout: 30000 });
         }
 
-        // Optionally validate network status of dashboard or me endpoint if available
-        // We keep it resilient and optional; attempt to wait for any 200 after click as a heuristic.
-        const response = await page.waitForResponse(
-          (resp) => resp.ok() && isSameOrigin(resp.url(), BASE_URL),
-          { timeout: 10000 }
-        ).catch(() => null);
-        expect.soft(response, 'Expected at least one successful network response after authentication').not.toBeNull();
+        // Soft check: some successful network response from same origin after auth
+        const sameOriginOk = await page
+          .waitForResponse((resp) => resp.ok() && isSameOrigin(resp.url(), baseUrl), { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        expect.soft(sameOriginOk, 'Expected at least one successful same-origin response after login').toBeTruthy();
       } else {
-        // Failure path: Expect an error toast/text either in frame or page
-        // Priority: Row expected message -> common selectors/text patterns
-        if (c.expectedMessage && c.expectedMessage.trim().length > 0) {
-          // Check in-frame first
-          const errorCandidateInFrame = frame!.getByText(c.expectedMessage, { exact: false });
-          // Use race-like approach: ensure at least one place shows it
+        // Failure: assert specific error text if provided else generic error element/patterns
+        const expectedError = sc.expectErrorText && String(sc.expectErrorText).trim();
+
+        if (expectedError) {
           const found = await waitForAnyVisible(
             [
-              () => errorCandidateInFrame,
-              () => page.getByText(c.expectedMessage!, { exact: false }),
-              () => frame!.locator('[role="alert"]'),
+              () => frame.getByText(expectedError, { exact: false }),
+              () => page.getByText(expectedError, { exact: false }),
+              () => frame.locator('[role="alert"]'),
               () => page.locator('[role="alert"]'),
             ],
-            15000
+            20000
           );
-          expect(found, `Expected error message or alert to appear: "${c.expectedMessage}"`).toBeTruthy();
+          expect(found, `Expected error message or alert visible: "${expectedError}"`).toBeTruthy();
         } else {
-          // Generic failure UI patterns when message unknown
-          const genericCandidates = [
-            () => frame!.locator('[role="alert"]'),
-            () => page.locator('[role="alert"]'),
-            () => frame!.getByText(/invalid|incorrect|failed|try again/i),
-            () => page.getByText(/invalid|incorrect|failed|try again/i),
-          ];
-          const found = await waitForAnyVisible(genericCandidates, 15000);
-          expect(found, 'Expected an error message or alert on login failure').toBeTruthy();
+          const found = await waitForAnyVisible(
+            [
+              () => frame.locator('[role="alert"]'),
+              () => page.locator('[role="alert"]'),
+              () => frame.getByText(/invalid|incorrect|failed|try again/i),
+              () => page.getByText(/invalid|incorrect|failed|try again/i),
+            ],
+            20000
+          );
+          expect(found, 'Expected an error state to become visible for failed login').toBeTruthy();
         }
       }
     });
@@ -110,33 +90,30 @@ test.describe('Authentication - Login via iframe flow', () => {
 });
 
 /**
- * Utility to wait for any one of the provided locator suppliers to become visible.
+ * PUBLIC_INTERFACE
+ * Wait until any one of the provided locator suppliers is visible.
  */
-async function waitForAnyVisible(
-  locatorSuppliers: Array<() => import('@playwright/test').Locator>,
-  timeoutMs: number
-): Promise<boolean> {
+async function waitForAnyVisible(locatorSuppliers, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     for (const supplier of locatorSuppliers) {
       try {
         const loc = supplier();
-        const visible = await loc.isVisible();
-        if (visible) return true;
+        if (await loc.isVisible()) return true;
       } catch {
-        // ignore and continue
+        // ignore
       }
     }
     if (Date.now() > deadline) return false;
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 150));
   }
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function isSameOrigin(url: string, base: string): boolean {
+function isSameOrigin(url, base) {
   try {
     const u = new URL(url);
     const b = new URL(base);
