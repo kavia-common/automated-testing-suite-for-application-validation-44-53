@@ -10,8 +10,9 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "test": "playwright test",
+    "eject": "react-scripts eject",
+    "pw:show-report": "npx playwright show-report"
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -29,6 +30,11 @@
     ]
   },
   "devDependencies": {
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "@playwright/test": "^1.45.0",
+    "typescript": "^5.3.3",
+    "eslint": "^9.6.0",
+    "eslint-plugin-playwright": "^1.6.2",
+    "xlsx": "^0.18.5"
   }
 }
